@@ -9,6 +9,10 @@ android {
         version = release(36)
     }
 
+    buildFeatures {
+        viewBinding = true
+    }
+
     defaultConfig {
         applicationId = "com.group4.productcatalog"
         minSdk = 29
