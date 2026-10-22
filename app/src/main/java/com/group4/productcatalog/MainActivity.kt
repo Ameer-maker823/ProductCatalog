@@ -1,23 +1,41 @@
 package com.group4.productcatalog
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.group4.productcatalog.data.Product
+import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
 import com.group4.productcatalog.databinding.ActivityMainBinding
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private val viewModel: ProductViewModel by viewModels()
     private val adapter = ProductAdapter()
-    private var sortOn = false
+
+    private var slugs: List<String> = emptyList()
+    private var pulse: ObjectAnimator? = null
+    private var lastError: LoadError? = null
+    private var snackbar: Snackbar? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
@@ -34,18 +52,101 @@ class MainActivity : AppCompatActivity() {
             binding.rvProducts.setPadding(
                 bars.left + dp(9), dp(6), bars.right + dp(9), bars.bottom + dp(20)
             )
+            binding.skeleton.setPadding(bars.left + dp(9), dp(6), bars.right + dp(9), 0)
             insets
         }
 
         binding.rvProducts.adapter = adapter
-        adapter.submitList(sampleProducts())
+        setupPaging()
 
-        buildChips(listOf("All", "Smartphones", "Laptops", "Fragrances", "Groceries"))
-        binding.btnSort.setOnClickListener { toggleSort() }
+        binding.btnSort.setOnClickListener { viewModel.toggleSort() }
+        binding.btnRetry.setOnClickListener { viewModel.retry() }
+        binding.etSearch.doAfterTextChanged { viewModel.onQueryChanged(it?.toString().orEmpty()) }
+        binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { viewModel.state.collect { render(it) } }
+                launch { viewModel.categories.collect { buildChips(it) } }
+                launch { viewModel.category.collect { highlightChip(it) } }
+                launch { viewModel.sortAsc.collect { styleSort(it) } }
+            }
+        }
     }
 
-    private fun buildChips(names: List<String>) {
+    private fun render(state: UiState) {
+        val empty = state.products.isEmpty()
+
+        binding.skeleton.visibility = if (state.loading) View.VISIBLE else View.GONE
+        setPulse(state.loading)
+        adapter.submitList(state.products)
+        binding.progressMore.visibility = if (state.loadingMore) View.VISIBLE else View.GONE
+
+        val showEmpty = !state.loading && empty
+        binding.emptyState.visibility = if (showEmpty) View.VISIBLE else View.GONE
+        if (showEmpty) {
+            binding.tvEmpty.setText(
+                when (state.error) {
+                    LoadError.NETWORK -> R.string.error_network
+                    LoadError.GENERIC -> R.string.error_generic
+                    null -> R.string.empty_products
+                }
+            )
+            binding.btnRetry.visibility = if (state.error != null) View.VISIBLE else View.GONE
+        }
+
+        if (state.error == null) {
+            snackbar?.dismiss()
+            snackbar = null
+        } else if (!empty && state.error != lastError) {
+            val message = if (state.error == LoadError.NETWORK) R.string.error_network else R.string.error_generic
+            snackbar = Snackbar.make(binding.main, message, Snackbar.LENGTH_INDEFINITE)
+                .setAction(R.string.action_retry) { viewModel.retry() }
+                .also { it.show() }
+        }
+        lastError = state.error
+    }
+
+    private fun setupPaging() {
+        binding.rvProducts.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0) return
+                val manager = recyclerView.layoutManager as GridLayoutManager
+                if (manager.findLastVisibleItemPosition() >= adapter.itemCount - 6) {
+                    viewModel.loadMore()
+                }
+            }
+        })
+    }
+
+    private fun setPulse(on: Boolean) {
+        if (on) {
+            if (pulse == null) {
+                pulse = ObjectAnimator.ofFloat(binding.skeleton, View.ALPHA, 0.45f, 1f).apply {
+                    duration = 800
+                    repeatCount = ValueAnimator.INFINITE
+                    repeatMode = ValueAnimator.REVERSE
+                    start()
+                }
+            }
+        } else {
+            pulse?.cancel()
+            pulse = null
+            binding.skeleton.alpha = 1f
+        }
+    }
+
+    private fun buildChips(categories: List<String>) {
+        slugs = categories
         binding.chipRow.removeAllViews()
+        val names = listOf(getString(R.string.category_all)) + categories.map { it.toTitle() }
         names.forEachIndexed { index, name ->
             val chip = TextView(this).apply {
                 text = name
@@ -55,17 +156,23 @@ class MainActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginEnd = dp(8) }
-                setOnClickListener { selectChip(index) }
+                setOnClickListener { onChipClick(index) }
             }
             binding.chipRow.addView(chip)
         }
-        selectChip(0)
+        highlightChip(viewModel.category.value)
     }
 
-    private fun selectChip(index: Int) {
+    private fun onChipClick(index: Int) {
+        viewModel.setCategory(if (index == 0) null else slugs[index - 1])
+        if (binding.etSearch.text.isNotEmpty()) binding.etSearch.setText("")
+    }
+
+    private fun highlightChip(slug: String?) {
+        val selected = if (slug == null) 0 else slugs.indexOf(slug) + 1
         for (i in 0 until binding.chipRow.childCount) {
             val chip = binding.chipRow.getChildAt(i) as TextView
-            val on = i == index
+            val on = i == selected
             chip.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip_off)
             chip.setTextColor(
                 ContextCompat.getColor(this, if (on) android.R.color.white else R.color.text_secondary)
@@ -73,22 +180,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun toggleSort() {
-        sortOn = !sortOn
-        binding.btnSort.setBackgroundResource(if (sortOn) R.drawable.bg_chip_on else R.drawable.bg_chip_off)
-        val tint = ContextCompat.getColor(this, if (sortOn) android.R.color.white else R.color.text_primary)
+    private fun styleSort(on: Boolean) {
+        binding.btnSort.setBackgroundResource(if (on) R.drawable.bg_chip_on else R.drawable.bg_chip_off)
+        val tint = ContextCompat.getColor(this, if (on) android.R.color.white else R.color.text_primary)
         binding.btnSort.imageTintList = ColorStateList.valueOf(tint)
     }
 
-    // Temporary: replaced by real API data in the next steps.
-    private fun sampleProducts() = listOf(
-        Product(1, "Wireless headphones", "", "electronics", 59.0, 4.6, ""),
-        Product(2, "Smart watch", "", "electronics", 129.0, 4.4, ""),
-        Product(3, "Leather backpack", "", "fashion", 84.0, 4.7, ""),
-        Product(4, "Running shoes", "", "fashion", 72.0, 4.5, ""),
-        Product(5, "Desk lamp", "", "home", 35.0, 4.3, ""),
-        Product(6, "Sunglasses", "", "fashion", 48.0, 4.2, "")
-    )
+    private fun hideKeyboard() {
+        WindowCompat.getInsetsController(window, binding.etSearch)
+            .hide(WindowInsetsCompat.Type.ime())
+        binding.etSearch.clearFocus()
+    }
+
+    private fun String.toTitle() = replace('-', ' ').replaceFirstChar { it.uppercase() }
+
+    override fun onDestroy() {
+        pulse?.cancel()
+        super.onDestroy()
+    }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }

@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.group4.productcatalog.data.Product
 import com.group4.productcatalog.databinding.ItemProductBinding
 import java.util.Locale
+import coil.load
 
 class ProductAdapter(
     private val onClick: (Product) -> Unit = {},
@@ -26,9 +27,12 @@ class ProductAdapter(
         val product = getItem(position)
         with(holder.binding) {
             tvProductName.text = product.title
-            tvProductCategory.text = product.category.replaceFirstChar { it.uppercase() }
+            tvProductCategory.text = product.category.replace('-', ' ').replaceFirstChar { it.uppercase() }
             tvPrice.text = String.format(Locale.US, "$%.2f", product.price)
             tvRating.text = String.format(Locale.US, "%.1f", product.rating)
+            ivProduct.load(product.thumbnail) {
+                crossfade(250)
+            }
             productCard.setOnClickListener { onClick(product) }
             btnFavorite.setOnClickListener { onFavorite(product) }
         }
