@@ -1,7 +1,9 @@
 package com.group4.productcatalog
 
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
@@ -34,6 +36,7 @@ class ProductAdapter(
         return ProductViewHolder(binding)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onBindViewHolder(holder: ProductViewHolder, position: Int) {
         val product = getItem(position)
         with(holder.binding) {
@@ -44,6 +47,15 @@ class ProductAdapter(
             ivProduct.load(product.thumbnail) { crossfade(250) }
             productCard.setOnClickListener { onClick(product) }
             btnFavorite.setOnClickListener { onFavorite(product) }
+            productCard.setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN ->
+                        v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(100).start()
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                        v.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+                }
+                false
+            }
         }
         styleHeart(holder.binding, product.id in favoriteIds, animate = false)
     }

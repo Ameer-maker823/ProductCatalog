@@ -2,9 +2,11 @@ package com.group4.productcatalog
 
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.View
+import android.view.animation.AnimationUtils
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -12,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -23,11 +26,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
+import com.group4.productcatalog.data.Product
 import com.group4.productcatalog.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
-import android.content.Intent
-import androidx.core.app.ActivityOptionsCompat
-import com.group4.productcatalog.data.Product
 
 class MainActivity : AppCompatActivity() {
 
@@ -63,6 +64,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.rvProducts.adapter = adapter
+        binding.rvProducts.setHasFixedSize(true)
+        binding.rvProducts.layoutAnimation =
+            AnimationUtils.loadLayoutAnimation(this, R.anim.layout_grid_enter)
         setupPaging()
 
         binding.btnSort.setOnClickListener { viewModel.toggleSort() }
@@ -94,7 +98,13 @@ class MainActivity : AppCompatActivity() {
 
         binding.skeleton.visibility = if (state.loading) View.VISIBLE else View.GONE
         setPulse(state.loading)
-        adapter.submitList(state.products)
+
+        val wasEmpty = adapter.itemCount == 0
+        adapter.submitList(state.products) {
+            if (wasEmpty && state.products.isNotEmpty()) {
+                binding.rvProducts.scheduleLayoutAnimation()
+            }
+        }
         binding.progressMore.visibility = if (state.loadingMore) View.VISIBLE else View.GONE
 
         val showEmpty = !state.loading && empty
@@ -210,6 +220,13 @@ class MainActivity : AppCompatActivity() {
         binding.etSearch.clearFocus()
     }
 
+    private fun openDetail(product: Product) {
+        val intent = Intent(this, ProductDetailActivity::class.java)
+            .putExtra(ProductDetailActivity.EXTRA_PRODUCT_ID, product.id)
+        val options = ActivityOptionsCompat.makeCustomAnimation(this, R.anim.detail_enter, R.anim.main_hold)
+        startActivity(intent, options.toBundle())
+    }
+
     private fun String.toTitle() = replace('-', ' ').replaceFirstChar { it.uppercase() }
 
     override fun onDestroy() {
@@ -218,11 +235,4 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-
-    private fun openDetail(product: Product) {
-        val intent = Intent(this, ProductDetailActivity::class.java)
-            .putExtra(ProductDetailActivity.EXTRA_PRODUCT_ID, product.id)
-        val options = ActivityOptionsCompat.makeCustomAnimation(this, R.anim.detail_enter, R.anim.main_hold)
-        startActivity(intent, options.toBundle())
-    }
 }
