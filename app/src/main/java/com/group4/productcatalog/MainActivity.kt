@@ -25,12 +25,15 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import com.group4.productcatalog.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
+import android.content.Intent
+import androidx.core.app.ActivityOptionsCompat
+import com.group4.productcatalog.data.Product
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: ProductViewModel by viewModels()
-    private val adapter = ProductAdapter()
+    private val adapter = ProductAdapter(onClick = { openDetail(it) })
 
     private var slugs: List<String> = emptyList()
     private var pulse: ObjectAnimator? = null
@@ -200,4 +203,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private fun openDetail(product: Product) {
+        val intent = Intent(this, ProductDetailActivity::class.java)
+            .putExtra(ProductDetailActivity.EXTRA_PRODUCT_ID, product.id)
+        val options = ActivityOptionsCompat.makeCustomAnimation(this, R.anim.detail_enter, R.anim.main_hold)
+        startActivity(intent, options.toBundle())
+    }
 }

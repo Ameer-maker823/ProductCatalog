@@ -56,4 +56,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.coil)
+    implementation(libs.androidx.viewpager2)
 }
