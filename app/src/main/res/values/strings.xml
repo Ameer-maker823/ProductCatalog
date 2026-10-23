@@ -13,4 +13,7 @@
     <string name="category_all">All</string>
     <string name="action_save">Save</string>
     <string name="label_description">About this product</string>
+    <string name="action_saved">Saved</string>
+    <string name="chip_saved">Saved</string>
+    <string name="empty_saved">No saved products yet. Tap the heart on a product to save it.</string>
 </resources>

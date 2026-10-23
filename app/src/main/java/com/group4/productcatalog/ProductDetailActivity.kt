@@ -58,10 +58,12 @@ class ProductDetailActivity : AppCompatActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
         binding.btnRetry.setOnClickListener { viewModel.load() }
+        binding.btnSave.setOnClickListener { viewModel.toggleFavorite() }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.state.collect { render(it) }
+                launch { viewModel.state.collect { render(it) } }
+                launch { viewModel.isFavorite.collect { styleSave(it) } }
             }
         }
     }
@@ -130,6 +132,14 @@ class ProductDetailActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private fun styleSave(saved: Boolean) {
+        binding.btnSave.setText(if (saved) R.string.action_saved else R.string.action_save)
+        binding.btnSave.setBackgroundResource(if (saved) R.drawable.bg_chip_off else R.drawable.bg_button)
+        binding.btnSave.setTextColor(
+            ContextCompat.getColor(this, if (saved) R.color.text_primary else android.R.color.white)
+        )
+    }
 
     companion object {
         const val EXTRA_PRODUCT_ID = "product_id"

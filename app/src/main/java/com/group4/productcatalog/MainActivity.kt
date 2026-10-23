@@ -33,7 +33,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: ProductViewModel by viewModels()
-    private val adapter = ProductAdapter(onClick = { openDetail(it) })
+    private val adapter = ProductAdapter(
+        onClick = { openDetail(it) },
+        onFavorite = { viewModel.toggleFavorite(it) }
+    )
 
     private var slugs: List<String> = emptyList()
     private var pulse: ObjectAnimator? = null
@@ -78,7 +81,9 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.state.collect { render(it) } }
                 launch { viewModel.categories.collect { buildChips(it) } }
-                launch { viewModel.category.collect { highlightChip(it) } }
+                launch { viewModel.category.collect { highlightChip() } }
+                launch { viewModel.showSaved.collect { highlightChip() } }
+                launch { viewModel.favoriteIds.collect { adapter.favoriteIds = it } }
                 launch { viewModel.sortAsc.collect { styleSort(it) } }
             }
         }
@@ -99,7 +104,7 @@ class MainActivity : AppCompatActivity() {
                 when (state.error) {
                     LoadError.NETWORK -> R.string.error_network
                     LoadError.GENERIC -> R.string.error_generic
-                    null -> R.string.empty_products
+                    null -> if (viewModel.showSaved.value) R.string.empty_saved else R.string.empty_products
                 }
             )
             binding.btnRetry.visibility = if (state.error != null) View.VISIBLE else View.GONE
@@ -149,7 +154,8 @@ class MainActivity : AppCompatActivity() {
     private fun buildChips(categories: List<String>) {
         slugs = categories
         binding.chipRow.removeAllViews()
-        val names = listOf(getString(R.string.category_all)) + categories.map { it.toTitle() }
+        val names = listOf(getString(R.string.category_all), getString(R.string.chip_saved)) +
+                categories.map { it.toTitle() }
         names.forEachIndexed { index, name ->
             val chip = TextView(this).apply {
                 text = name
@@ -163,16 +169,25 @@ class MainActivity : AppCompatActivity() {
             }
             binding.chipRow.addView(chip)
         }
-        highlightChip(viewModel.category.value)
+        highlightChip()
     }
 
     private fun onChipClick(index: Int) {
-        viewModel.setCategory(if (index == 0) null else slugs[index - 1])
+        when (index) {
+            0 -> viewModel.setCategory(null)
+            1 -> viewModel.showSavedProducts()
+            else -> viewModel.setCategory(slugs[index - 2])
+        }
         if (binding.etSearch.text.isNotEmpty()) binding.etSearch.setText("")
     }
 
-    private fun highlightChip(slug: String?) {
-        val selected = if (slug == null) 0 else slugs.indexOf(slug) + 1
+    private fun highlightChip() {
+        val category = viewModel.category.value
+        val selected = when {
+            viewModel.showSaved.value -> 1
+            category == null -> 0
+            else -> slugs.indexOf(category) + 2
+        }
         for (i in 0 until binding.chipRow.childCount) {
             val chip = binding.chipRow.getChildAt(i) as TextView
             val on = i == selected
